@@ -6,6 +6,8 @@ output:
     number_sections: true
     toc: true
     toc_float: true
+author: "Chris Martin"
+date: "`r format(Sys.time(), '%B, %Y')`"
     
 knit: (function(input_file, encoding) {
   out_dir <- 'docs';

@@ -47,6 +47,6 @@ knit: (function(input_file, encoding) {
 
 # Data visualisation
 
-| Brief project description | Techniques used | Key learning resources |
-|---------------------------|-----------------|------------------------|
-|                           |                 |                        |
+| Brief project description                                      | Tools and techniques used | Key learning resources                                                                                                                           |
+|----------------------------------------------------------------|---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+| Visualising green space deprivation across the English regions | ggplot2, waffle charts    | a \#TidyTuesday [visualization produced by cxinya](https://github.com/cxinya/tidy-tuesday/blob/main/2021_week-11_bechdel/2021_week-11_bechdel.R) |
