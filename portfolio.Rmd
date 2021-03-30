@@ -11,16 +11,11 @@ knit: (function(input_file, encoding) {
  output_file=file.path(dirname(input_file), out_dir, 'index.html'))})
 ---
 
-```{r}
-
-
-```
-
 # Data cleaning
 
 | Brief project description | Techniques used | Key learning resources |
 |---------------------------|-----------------|------------------------|
-|                           |                 |                        |
+| test text                 |                 |                        |
 |                           |                 |                        |
 |                           |                 |                        |
 
