@@ -1,0 +1,229 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+Starting with a \#tidytuesday data set from back in 2019 <https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-05-21>
+
+<https://ourworldindata.org/plastic-pollution>
+
+```{r, echo=FALSE}
+library(tidyverse)
+library(rstanarm)
+library(janitor)
+```
+
+```{r}
+theme_set(theme_light())
+```
+
+```{r}
+# read in datasets and clean up variable names
+waste_vs_gdp <- read_csv('data/waste_vs_gdp.csv') %>% 
+  clean_names() %>% 
+  rename(country = entity,
+         country_code = code,
+         population = total_population_gapminder,
+         gdp_per_cap = gdp_per_capita_ppp_constant_2011_international_constant_2011_international,
+         plastic_waste_per_cap = per_capita_plastic_waste_kilograms_per_person_per_day)
+
+mismanaged_vs_gdp <- read_csv('data/mismanaged_vs_gdp.csv') %>% 
+  clean_names() %>% 
+  rename(country = entity,
+         country_code = code,
+         population = total_population_gapminder,
+         mismanaged_plastic_per_cap =
+           per_capita_mismanaged_plastic_waste_kilograms_per_person_per_day,
+         gdp_per_cap = gdp_per_capita_ppp_constant_2011_international_rate)
+```
+
+```{r}
+# focus down on contries where plastic and gdp data is available
+waste_vs_gdp_2010 <- waste_vs_gdp %>% 
+  filter(year == 2010,
+         !is.na(plastic_waste_per_cap),
+         !is.na(gdp_per_cap))
+
+mismanaged_vs_gdp_2010 <- mismanaged_vs_gdp %>% 
+  filter(year == 2010,
+         !is.na(mismanaged_plastic_per_cap),
+         !is.na(gdp_per_cap))
+
+# join the two datasets
+waste_mismanaged_gdp <- waste_vs_gdp_2010 %>% 
+  left_join(mismanaged_vs_gdp_2010)
+
+# reshape data for plotting
+waste_mismanaged_gdp_plot <- waste_mismanaged_gdp %>% 
+  mutate(plastic_waste_tot = plastic_waste_per_cap * 
+           population,
+         misman_plastic_waste_tot = mismanaged_plastic_per_cap *
+           population,
+         prop_plastic_waste_misman = misman_plastic_waste_tot / 
+           plastic_waste_tot) 
+
+# identify top n waste producing country for labelling in plot
+top_waste_producing_countries <- waste_mismanaged_gdp_plot %>% 
+  slice_max(plastic_waste_tot, n = 10)
+
+waste_mismanaged_gdp_plot %>% 
+  
+  ggplot(mapping = aes(x = gdp_per_cap, 
+                       y = prop_plastic_waste_misman)) +
+  
+  geom_point(mapping = aes(size = plastic_waste_tot,
+                           fill = plastic_waste_tot),
+             alpha = 0.75, shape = 21, colour = "grey50") +
+  
+  ggrepel::geom_text_repel(data = top_waste_producing_countries,
+                           mapping = aes(label = country)) +
+  
+  scale_x_log10(labels = scales::dollar_format(accuracy = 2)) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_viridis_c(option = 'magma', direction = -1, end = 0.85, begin = 0.15) +
+
+  guides(size = FALSE, fill = FALSE) +
+  labs(x = "\nGDP per capita",
+       y = "\nProportion of plastic waste mismanaged\n",
+       subtitle = "Larger, darker points represent countries which produce more plastic waste",
+       caption = "\nThe top 10 plastic waste producing countries are labeled")
+```
+
+
+```{r}
+country_class <- readxl::read_xls("data/OGHIST.xls", sheet = "Country Analytical History") %>% 
+  clean_names() %>% 
+  select(country_code = x1,
+         country = data_for_calendar_year,
+         income_group_2010 = x2010
+         )
+
+# add country income classifications to plastics and gdp data
+waste_mismanaged_gdp_class <- waste_mismanaged_gdp_plot %>% 
+  inner_join(country_class)
+```
+
+```{r}
+waste_mismanaged_gdp_class_lm_in <- waste_mismanaged_gdp_class %>% 
+  mutate(is_high_inc = gdp_per_cap >= 20000)
+
+lm_1 <- stan_glm(formula = prop_plastic_waste_misman ~ gdp_per_cap * is_high_inc,
+         data = waste_mismanaged_gdp_class_lm_in
+         )
+
+lm_1
+
+# control = list(adapt_delta = 0.99)
+
+simple_lm <- lm(formula = prop_plastic_waste_misman ~ gdp_per_cap * is_high_inc,
+         data = waste_mismanaged_gdp_class_lm_in
+         )
+coef(simple_lm)
+
+```
+Switch to piecewise linear regression
+https://towardsdatascience.com/piecewise-linear-regression-model-what-is-it-and-when-can-we-use-it-93286cfee452
+
+* could fit a polynomial model, but easier to interpret as 3 linear regression models
+
+stanglm objects not compatible with the estimation algorithm, also challenging to use logs in the formula
+
+```{r}
+waste_mismanaged_gdp_class_lm_in <- waste_mismanaged_gdp_class %>%
+  mutate(gdp_per_cap = log(gdp_per_cap))
+
+lm_2 <- lm(formula = prop_plastic_waste_misman ~ gdp_per_cap,
+                 data = waste_mismanaged_gdp_class_lm_in)
+
+# estimate break points
+segmented::segmented(lm_2, seg.Z = ~ gdp_per_cap, 
+                     # starting points for the break point estimation algorithm 
+                     # indentified by eye from the plot above
+                     psi = c(8.3, 10.5))
+
+```
+```{r fig.width=10}
+library(modelr)
+library(tidybayes)
+library(RColorBrewer)
+
+gdp_bound_1 <- 4500
+gdp_bound_2 <- 27000
+
+segmented_data <- waste_mismanaged_gdp_class %>% 
+  mutate(income_group = case_when(
+    gdp_per_cap < gdp_bound_1 ~ 1,
+    gdp_per_cap < gdp_bound_2 ~ 2,
+    TRUE ~ 3
+  )) 
+
+nested_segmented_data <- segmented_data %>%
+  group_by(income_group) %>% 
+  nest() %>% 
+  rename(lm_in = data)
+
+segmented_models <- nested_segmented_data %>% 
+  mutate(stan_glm = map(.x = lm_in, 
+                        .f = ~ stan_glm(
+                          formula = prop_plastic_waste_misman ~ log(gdp_per_cap), 
+                          data = .x,
+                          refresh = 0)),
+         coef = map(.x = stan_glm,
+                    .f = ~ broom.mixed::tidy(coef(.x))),
+         
+         data_grid = map(.x = lm_in,
+                         .f = ~data_grid(.x, 
+                                         gdp_per_cap = seq_range(gdp_per_cap, n = 100))),
+         
+         data_grid = map2(.x = data_grid, .y = stan_glm,
+                         .f = ~add_predicted_draws(.x, .y))
+  )
+
+segmented_models <- segmented_models %>% 
+  arrange(income_group)
+
+plotting_df <- segmented_models %>% 
+  select(-stan_glm, -lm_in, -coef) %>% 
+  unnest(data_grid)
+
+
+facet_labs <- c("Low income, High mismanagement",
+                "Mid income, Mid mismanagement",
+                "High income", "Low mismanagement")
+names(facet_labs) <- c("1", "2", "3")
+
+plotting_df %>% 
+  ggplot(aes(gdp_per_cap, `.prediction`)) +
+  stat_lineribbon(.width = c(.99, .95, .8, .5), alpha = 0.5) +
+  scale_fill_brewer(palette = "Blues") +
+  geom_point(data = segmented_data,
+             mapping = aes(gdp_per_cap, prop_plastic_waste_misman)) +
+  scale_x_log10(labels = scales::dollar_format(accuracy = 2)) +
+  facet_wrap(~income_group, scales = "free_x",
+             labeller = labeller(income_group = facet_labs)) +
+  labs(x = "GDP per capita",
+       y = "Proportion of plastic waste mismanaged\n",
+       fill = "Credibility interval")
+  
+
+segmented_models %>% 
+  select(-stan_glm, -lm_in, -data_grid) %>% 
+  unnest(coef)
+
+
+
+
+```
+$$ 
+y_{i} = \begin{cases}
+1.13 - 0.04\ln x_{i} + \epsilon_{1} &\text{if } x_{i} < 4500 \\
+3.99 - 0.38\ln x_{i} + \epsilon_{2} &\text{if } 4500 \leq   x_{i} < 27000 \\
+0.55 - 0.05\ln x_{i} + \epsilon_{3} &\text{if } x_{i} \geq 27000
+\end{cases}
+$$
+
+
+
+

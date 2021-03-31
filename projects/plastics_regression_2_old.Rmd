@@ -1,0 +1,25 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+misman_plastic <- read_csv("./data/mismanaged_vs_gdp.csv") %>% 
+  janitor::clean_names() %>% 
+  rename(mismanaged_plastic_waste_per_capita = per_capita_mismanaged_plastic_waste_kilograms_per_person_per_day,
+         gdp_per_capita = gdp_per_capita_ppp_constant_2011_international_rate,
+         population = total_population_gapminder
+) %>% 
+  filter(year == 2010) %>% 
+  na.omit()
+
+misman_plastic %>% 
+  ggplot(aes(mismanaged_plastic_waste_per_capita, gdp_per_capita)) +
+  geom_point() +
+  scale_x_log10() +
+  scale_y_log10()
+```
