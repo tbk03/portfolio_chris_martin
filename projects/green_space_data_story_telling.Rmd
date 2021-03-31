@@ -12,7 +12,21 @@ knit: (function(input_file, encoding) {
  output_file=file.path("C:/Users/chris/Desktop/Data Analysis Projects/portfolio_chris_martin/", out_dir, 'green_space_viz_1.html'))})
 ---
 
-<https://github.com/cxinya/tidy-tuesday/blob/main/2021_week-11_bechdel/2021_week-11_bechdel.R>
+In another notebook I conducted an exploratory analysis of green space deprivation data published by Friends of the Earth in the Autumn of 2020. Friends of Earth rated the extent of green space deprivation in each neighborhood (each middle-layer-super-output-area in language of UK administrative geography) in England. One of the interesting findings from this exploratory data analysis was that London has a much higher rate of neighborhoods experiencing the worst forms of green space deprivation than other English regions.
+
+I wanted to explore ways to visually communicate this finding, looking beyond a geographic representation where it would have challenging to convey this finding due to differences in the density of regions across the UK. In the end I settled up the waffle chat below (basically a slight adaptation on the familiar bar chart). The design of the visualization was inspired by this [\#TidyTuesday post](https://github.com/cxinya/tidy-tuesday/blob/main/2021_week-11_bechdel/2021_week-11_bechdel.R).
+
+Reflecting on the process of producing the plot, I noted:
+
+-   The difference font styles and colour palettes can make to the visual identity of a plot;
+
+-   That perhaps the additional effort and time required to produce a waffle plot (verses a standard bar chart) would be difficult to justify in the future;
+
+-   That I had learnt a considerable amount using the `theme` function from `ggplot2` to customize the visual design of a plot.
+
+I hope these learnings will be useful in producing visualisations which convey the findings of the data science projects I am working on at the moment. I also thought it was important to avoid getting caught up in the visual design of plots being produced as part of statistical analyses. Given the small, technical audiences for the later, the default themes from `ggplot2` are likely to be more than good enough.
+
+In the code below, I read in, clean and reshape the data before producing the plot itself.
 
 ```{r, warning = FALSE, message = FALSE, fig.width = 10, fig.height = 5}
 
