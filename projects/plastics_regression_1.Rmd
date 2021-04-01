@@ -38,7 +38,7 @@ theme_set(theme_light())
 
 # Introduction
 
-In this notebook I try out and apply some of the concepts, tools and techniques I have been learning as I read through the excellent [Regression and Other Stories](https://avehtari.github.io/ROS-Examples/). To do this I needed a dataset to work with. I decided to work with some data I had found (via \#TidyTuesday) on [how much plastic waste countries produce](https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-05-21) So with this dataset to hand, my more specific aims were to:
+In this notebook I try out and apply some of the concepts, tools and techniques I have been learning as I read through the excellent [Regression and Other Stories](https://avehtari.github.io/ROS-Examples/). To do this I needed a dataset to work with. I decided to work with some data I had found (via \#TidyTuesday) on [how much plastic waste countries produce](https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-05-21). So with this dataset to hand, my more specific aims were to:
 
 -   To develop a simple (Bayesian) regression model to predict the amount of plastic waste created by a country;
 

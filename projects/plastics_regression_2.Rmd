@@ -1,36 +1,101 @@
 ---
-title: "R Notebook"
+title: "Estimating the proportion of plastic waste countries mismanage"
 output:
   html_document:
     df_print: paged
+    number_sections: true
+    toc: true
+    toc_float: true
+author: "Chris Martin"
+date: "`r format(Sys.time(), '%B, %Y')`"
+
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path("C:/Users/chris/Desktop/Data Analysis Projects/portfolio_chris_martin/", out_dir, 'plastics_regression_2.html'))})
 ---
 
-Starting with a \#tidytuesday data set from back in 2019 <https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-05-21>
+```{r, include = FALSE}
+# global settings for producing html output
+knitr::opts_chunk$set(warning = FALSE,  # remove for readability
+                      message = FALSE,  # remove for readability 
+                      cache = TRUE)
+```
 
-<https://ourworldindata.org/plastic-pollution>
+# Introduction
+
+In this notebook I am again working with some datasets I had found (via \#TidyTuesday) which detail [how much plastic waste countries produce](https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-05-21). See the table below for a few more details on the datasets including the source of the data.
+
+My objective was to develop a model estimates the proportion of plastic waste mismanaged by a country. There is limited documentation available with the datasets, so at the moment I am assuming that mismanagement is being used as a synonym for various forms of disposal activities that have a high environmental impact (dumping plastics in the sea etc.).
+
+I started the modeling process with the idea that GDP per capita might be a helpful feature for estimating the proportion of plastic waste mismanaged. This idea was based economic theories (such as [Jevon's paradox)](https://en.wikipedia.org/wiki/Jevons_paradox) that suggest:
+
+-    on one hand that as economies develop their environmental impact can increase through increased resource consumption.
+
+-   While on the other hand, that as economies develop they can use resources more efficient, so reducing the environmental impact of each unit of a resource that is consumed.
+
+Following on from this (1) Introduction section, in the three sections below I:
+
+(2) Import and clean the two datasets needed to develop a model.
+
+(3) Conduct an exploratory data analysis to understand the association between the proportion of plastic waste mismanaged by a country and it's GDP per capita.
+
+(4) Develop a 'piecewise' linear regression model to estimate he proportion of plastic waste mismanaged by a country based on it's GDP per capita.
+
+## Dataset used
+
++----------------------------+--------------------------------+-------------------------------------------------------------------------------------------------------------------+
+| File Names                 | Variable name in this notebook | Notes                                                                                                             |
++============================+================================+===================================================================================================================+
+| 'data/waste_vs_gdp.csv'    | waste_vs_gdp                   | [Data provided by \#tidytuesday](https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-05-21) |
+|                            |                                |                                                                                                                   |
+| data/mismanaged_vs_gdp.csv | mismanaged_vs_gdp              | -   via our [world in data](https://ourworldindata.org/plastic-pollution#summary);                                |
+|                            |                                |                                                                                                                   |
+|                            |                                | -   original sources: [Jambeck et al. 2015](https://jambeck.engr.uga.edu/landplasticinput) and gapminder.         |
++----------------------------+--------------------------------+-------------------------------------------------------------------------------------------------------------------+
 
 ```{r, echo=FALSE}
+# core libraries
 library(tidyverse)
-library(rstanarm)
-library(janitor)
+library(rstanarm)   # for Bayesian regression modelling
+
+# helper libraries
+library(janitor)    # for utility which cleans up variable names  
+library(modelr)     # for creating a data grid for model predictions
+library(tidybayes)  # for tidying output of Bayesian regression model
+
+# global notebook setting
+theme_set(theme_light())  # set default theme for appearance of plots
 ```
 
-```{r}
-theme_set(theme_light())
-```
+# Data import and cleaning
+
+In order to understand the proportion of plastic waste mismanaged by country, I needed to import two datasets: (1) focuses on the total amount of plastic waste produced; and, (2) focuses on the amount of plastic waste mismanaged. Below I do some very basic cleaning of the data around the variable names to make them easier to work with in the analysis and modeling.
 
 ```{r}
-# read in datasets and clean up variable names
-waste_vs_gdp <- read_csv('data/waste_vs_gdp.csv') %>% 
-  clean_names() %>% 
+# read in the dataset on waste and gdp
+waste_vs_gdp <- read_csv('data/waste_vs_gdp.csv') %>%
+  
+  # make variables names consistent in terms of case etc.
+  clean_names() %>%
+  
+  # clean up variable names including shortening variables names to make them
+  # easier to work with
   rename(country = entity,
          country_code = code,
          population = total_population_gapminder,
          gdp_per_cap = gdp_per_capita_ppp_constant_2011_international_constant_2011_international,
          plastic_waste_per_cap = per_capita_plastic_waste_kilograms_per_person_per_day)
 
-mismanaged_vs_gdp <- read_csv('data/mismanaged_vs_gdp.csv') %>% 
+# read in the dataset on mismanaged waste and gdp
+mismanaged_vs_gdp <- read_csv('data/mismanaged_vs_gdp.csv') %>%
+  
+  # make variables names consistent in terms of case etc.
   clean_names() %>% 
+  
+  # clean up variable names including shortening variables names to make them
+  # easier to work with
   rename(country = entity,
          country_code = code,
          population = total_population_gapminder,
@@ -39,23 +104,34 @@ mismanaged_vs_gdp <- read_csv('data/mismanaged_vs_gdp.csv') %>%
          gdp_per_cap = gdp_per_capita_ppp_constant_2011_international_rate)
 ```
 
+I know from having previously worked with these datasets that plastic waste data is only available for 2010. Also, there are a few countries with missing values for plastic waste, GDP and population variables. So, in the code below I process the two datasets according removing observations for years other than 2010, and observations where missing data could provide problematic during the modeling process. Then all that remains is to joining the two datasets, which is easy enough given they come from the same source and share primary keys.
+
 ```{r}
-# focus down on contries where plastic and gdp data is available
+# focus down on countries where plastic waste and gdp data is available
 waste_vs_gdp_2010 <- waste_vs_gdp %>% 
   filter(year == 2010,
          !is.na(plastic_waste_per_cap),
          !is.na(gdp_per_cap))
 
+# focus down on countries where mismanaged waste and gdp data is available
 mismanaged_vs_gdp_2010 <- mismanaged_vs_gdp %>% 
   filter(year == 2010,
          !is.na(mismanaged_plastic_per_cap),
          !is.na(gdp_per_cap))
 
-# join the two datasets
+# join the two datasets ahead of analysis
 waste_mismanaged_gdp <- waste_vs_gdp_2010 %>% 
   left_join(mismanaged_vs_gdp_2010)
+```
 
-# reshape data for plotting
+# Exploratory data analysis
+
+I started this analysis with a fairly clear idea of what I wanted to do, based on: some theoretical ideas around economic development and environmental impact; and, a previous exploratory data analysis I done with the plastic waste data. So, in this notebook I will keep the exploratory data analysis fairly focused on the task at hand: estimating the proportion of plastic waste mismanaged by country based on economic data available.
+
+The first I thing I need to do is create a few new variables (see code below). This allows me to then calculated the proportion of plastic waste mismanaged by a country (i.e. the variable to estimated).
+
+```{r}
+# reshape data to create target feature 
 waste_mismanaged_gdp_plot <- waste_mismanaged_gdp %>% 
   mutate(plastic_waste_tot = plastic_waste_per_cap * 
            population,
@@ -63,101 +139,106 @@ waste_mismanaged_gdp_plot <- waste_mismanaged_gdp %>%
            population,
          prop_plastic_waste_misman = misman_plastic_waste_tot / 
            plastic_waste_tot) 
+```
 
+Finally before creating the plot itself, I just needed to identify the top waste producing countries so these can be labeled within the plot.
+
+```{r}
 # identify top n waste producing country for labelling in plot
 top_waste_producing_countries <- waste_mismanaged_gdp_plot %>% 
   slice_max(plastic_waste_tot, n = 10)
+```
 
-waste_mismanaged_gdp_plot %>% 
+```{r}
+# create the plot
+p <- waste_mismanaged_gdp_plot %>% 
   
+  # create the base for the plot
   ggplot(mapping = aes(x = gdp_per_cap, 
                        y = prop_plastic_waste_misman)) +
   
+  # add reference lines which emphasis three potential trends
+  # dependent of gdp_per_capita
+  geom_vline(xintercept = c(3000, 36000),
+             colour = "grey50", size = 2, alpha = 0.5) +
+  
+  # add observations from source data
   geom_point(mapping = aes(size = plastic_waste_tot,
                            fill = plastic_waste_tot),
              alpha = 0.75, shape = 21, colour = "grey50") +
   
+  # label the top waste producing countries
   ggrepel::geom_text_repel(data = top_waste_producing_countries,
                            mapping = aes(label = country)) +
   
+  # adjust scales to (hopefully) make the plot easier to interpret
   scale_x_log10(labels = scales::dollar_format(accuracy = 2)) +
   scale_y_continuous(labels = scales::percent) +
-  scale_fill_viridis_c(option = 'magma', direction = -1, end = 0.85, begin = 0.15) +
-
+  scale_fill_viridis_c(option = 'magma', direction = -1, 
+                       end = 0.85, begin = 0.15) +
+  
+  # remove unneccesary legends which might make the plot more confusing to look at
   guides(size = FALSE, fill = FALSE) +
-  labs(x = "\nGDP per capita",
+  
+  # add plot labels 
+  labs(x = "\nGDP per capita\n(on a log scale)",
        y = "\nProportion of plastic waste mismanaged\n",
        subtitle = "Larger, darker points represent countries which produce more plastic waste",
        caption = "\nThe top 10 plastic waste producing countries are labeled")
 ```
 
+The plot itself shows GDP per capita on a log scale verses the proportion of plastic waste mismanaged. The overall relationship between the two variables is clearly non-linear.
+
+However, alternatively, I could view the plot as showing three different groups of countries each with a different linear relationships between the log of GDP per capita and the proportion of plastic waste mismanaged. The grey vertical lines in the plot below highlight where I estimated by eye the boundaries between these groups to fall. The groups themselves could be described as follows.
+
+-   Group 1: The 'lowest' income countries where up to a threshold (approx. \$3,000) increasing GDP per capita does not appear to associated with reductions in plastic waste mismanagement.
+
+-   Group 2: The 'middle' income countries where up to another threshold (approx. \$35,000) increasing GDP does appear to be associated with reductions in plastic waste mismanagement.
+
+-   Group 3: The 'highest' income countries where above the second threshold (approx. \$35,000) increasing GDP does not appear to be associated with further reductions in plastic waste mismanagement.
+
+These trends and groupings could be explained in terms of countries needing to reach a certain level of economic development before the infrastructure, capabilities and political imperative to effectively manage plastic waste emerge. Beyond this level of economic development a county's increasing income and wealth allow it to reduce the proportion of plastic waste which is mismanaged. However, as the proportion of waste mismanaged gets closer to the natural limit of zero, reductions in waste mismanagement become harder to achieve. So, beyond a second level of economic development there are few further gains to made in terms of reducing plastic waste mismanagement.
 
 ```{r}
-country_class <- readxl::read_xls("data/OGHIST.xls", sheet = "Country Analytical History") %>% 
-  clean_names() %>% 
-  select(country_code = x1,
-         country = data_for_calendar_year,
-         income_group_2010 = x2010
-         )
-
-# add country income classifications to plastics and gdp data
-waste_mismanaged_gdp_class <- waste_mismanaged_gdp_plot %>% 
-  inner_join(country_class)
+# display the plot
+p
 ```
 
-```{r}
-waste_mismanaged_gdp_class_lm_in <- waste_mismanaged_gdp_class %>% 
-  mutate(is_high_inc = gdp_per_cap >= 20000)
+# Piecewise linear regression modelling
 
-lm_1 <- stan_glm(formula = prop_plastic_waste_misman ~ gdp_per_cap * is_high_inc,
-         data = waste_mismanaged_gdp_class_lm_in
-         )
+Switch to piecewise linear regression <https://towardsdatascience.com/piecewise-linear-regression-model-what-is-it-and-when-can-we-use-it-93286cfee452>
 
-lm_1
-
-# control = list(adapt_delta = 0.99)
-
-simple_lm <- lm(formula = prop_plastic_waste_misman ~ gdp_per_cap * is_high_inc,
-         data = waste_mismanaged_gdp_class_lm_in
-         )
-coef(simple_lm)
-
-```
-Switch to piecewise linear regression
-https://towardsdatascience.com/piecewise-linear-regression-model-what-is-it-and-when-can-we-use-it-93286cfee452
-
-* could fit a polynomial model, but easier to interpret as 3 linear regression models
+-   could fit a polynomial model, but easier to interpret as 3 linear regression models
 
 stanglm objects not compatible with the estimation algorithm, also challenging to use logs in the formula
 
 ```{r}
-waste_mismanaged_gdp_class_lm_in <- waste_mismanaged_gdp_class %>%
+waste_mismanaged_gdp_mod <- waste_mismanaged_gdp_plot %>%
   mutate(gdp_per_cap = log(gdp_per_cap))
 
-lm_2 <- lm(formula = prop_plastic_waste_misman ~ gdp_per_cap,
-                 data = waste_mismanaged_gdp_class_lm_in)
+lm_1 <- lm(formula = prop_plastic_waste_misman ~ gdp_per_cap,
+                 data = waste_mismanaged_gdp_mod)
 
 # estimate break points
-segmented::segmented(lm_2, seg.Z = ~ gdp_per_cap, 
+segmented::segmented(lm_1, seg.Z = ~ gdp_per_cap, 
                      # starting points for the break point estimation algorithm 
                      # indentified by eye from the plot above
-                     psi = c(8.3, 10.5))
+                     psi = c(8.0, 10.5))
 
 ```
-```{r fig.width=10}
-library(modelr)
-library(tidybayes)
-library(RColorBrewer)
 
+```{r fig.width=10}
 gdp_bound_1 <- 4500
 gdp_bound_2 <- 27000
 
-segmented_data <- waste_mismanaged_gdp_class %>% 
-  mutate(income_group = case_when(
-    gdp_per_cap < gdp_bound_1 ~ 1,
-    gdp_per_cap < gdp_bound_2 ~ 2,
-    TRUE ~ 3
-  )) 
+segmented_data <- waste_mismanaged_gdp_mod %>% 
+  mutate(gdp_per_cap = exp(gdp_per_cap),
+         
+         income_group = case_when(
+           gdp_per_cap < gdp_bound_1 ~ 1,
+           gdp_per_cap < gdp_bound_2 ~ 2,
+           TRUE ~ 3
+         )) 
 
 nested_segmented_data <- segmented_data %>%
   group_by(income_group) %>% 
@@ -179,33 +260,46 @@ segmented_models <- nested_segmented_data %>%
          
          data_grid = map2(.x = data_grid, .y = stan_glm,
                          .f = ~add_predicted_draws(.x, .y))
-  )
-
-segmented_models <- segmented_models %>% 
+  ) %>% 
   arrange(income_group)
 
 plotting_df <- segmented_models %>% 
   select(-stan_glm, -lm_in, -coef) %>% 
   unnest(data_grid)
 
-
-facet_labs <- c("Low income, High mismanagement",
-                "Mid income, Mid mismanagement",
-                "High income", "Low mismanagement")
+# define readable labels for facets
+facet_labs <- c("Lower income countries",
+                "Middlle income countries",
+                "High income countries")
 names(facet_labs) <- c("1", "2", "3")
+
+# specify which countries to be labeled on
+country_labels <- segmented_data %>% 
+  filter((income_group == 1 & prop_plastic_waste_misman < 0.5 ) |
+           (income_group == 3 & prop_plastic_waste_misman > 0.2))
 
 plotting_df %>% 
   ggplot(aes(gdp_per_cap, `.prediction`)) +
   stat_lineribbon(.width = c(.99, .95, .8, .5), alpha = 0.5) +
   scale_fill_brewer(palette = "Blues") +
   geom_point(data = segmented_data,
-             mapping = aes(gdp_per_cap, prop_plastic_waste_misman)) +
+             mapping = aes(gdp_per_cap, prop_plastic_waste_misman,
+                           size = plastic_waste_tot),
+             colour = "grey10", alpha = 0.5) +
+  
   scale_x_log10(labels = scales::dollar_format(accuracy = 2)) +
+  scale_size_continuous(range = c(2, 6)) + 
+  
   facet_wrap(~income_group, scales = "free_x",
              labeller = labeller(income_group = facet_labs)) +
+  
+    ggrepel::geom_text_repel(data = country_labels,
+                           mapping = aes(gdp_per_cap, prop_plastic_waste_misman, label = country)) +
   labs(x = "GDP per capita",
        y = "Proportion of plastic waste mismanaged\n",
-       fill = "Credibility interval")
+       fill = "Credibility interval",
+       subtitle = "Larger points represent countries which produce more plastic waste") +
+  guides(size = FALSE)
   
 
 segmented_models %>% 
@@ -216,6 +310,7 @@ segmented_models %>%
 
 
 ```
+
 $$ 
 y_{i} = \begin{cases}
 1.13 - 0.04\ln x_{i} + \epsilon_{1} &\text{if } x_{i} < 4500 \\
@@ -223,7 +318,3 @@ y_{i} = \begin{cases}
 0.55 - 0.05\ln x_{i} + \epsilon_{3} &\text{if } x_{i} \geq 27000
 \end{cases}
 $$
-
-
-
-
