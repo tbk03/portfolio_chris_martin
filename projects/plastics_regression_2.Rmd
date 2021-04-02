@@ -31,7 +31,7 @@ My objective was to develop a model estimates the proportion of plastic waste mi
 
 I started the modeling process with the idea that GDP per capita might be a helpful feature for estimating the proportion of plastic waste mismanaged. This idea was based economic theories (such as [Jevon's paradox)](https://en.wikipedia.org/wiki/Jevons_paradox) that suggest:
 
--    on one hand that as economies develop their environmental impact can increase through increased resource consumption.
+-   on one hand that as economies develop their environmental impact can increase through increased resource consumption.
 
 -   While on the other hand, that as economies develop they can use resources more efficient, so reducing the environmental impact of each unit of a resource that is consumed.
 
@@ -150,6 +150,9 @@ top_waste_producing_countries <- waste_mismanaged_gdp_plot %>%
 ```
 
 ```{r}
+
+group_boundaries <- c(3000, 35000)
+
 # create the plot
 p <- waste_mismanaged_gdp_plot %>% 
   
@@ -157,19 +160,22 @@ p <- waste_mismanaged_gdp_plot %>%
   ggplot(mapping = aes(x = gdp_per_cap, 
                        y = prop_plastic_waste_misman)) +
   
-  # add reference lines which emphasis three potential trends
+  # add background colour and reference lines which emphasis three potential trends
   # dependent of gdp_per_capita
-  geom_vline(xintercept = c(3000, 36000),
-             colour = "grey50", size = 2, alpha = 0.5) +
+  geom_rect(aes(xmin = group_boundaries[1], xmax = group_boundaries[2], ymin = -0.05, ymax = 1.05),
+            fill = "grey90", alpha = 0.5) +
+  #geom_vline(xintercept = c(3000, 36000),
+  #           colour = "grey50", size = 2, alpha = 0.5) +
   
   # add observations from source data
-  geom_point(mapping = aes(size = plastic_waste_tot,
-                           fill = plastic_waste_tot),
-             alpha = 0.75, shape = 21, colour = "grey50") +
+  geom_point(#mapping = aes(size = plastic_waste_tot,
+                           #fill = plastic_waste_tot),
+             alpha = 0.9, shape = 21, colour = "grey50",
+             fill = "grey50", size = 1.5) +
   
   # label the top waste producing countries
-  ggrepel::geom_text_repel(data = top_waste_producing_countries,
-                           mapping = aes(label = country)) +
+  # ggrepel::geom_text_repel(data = top_waste_producing_countries,
+  #                          mapping = aes(label = country)) +
   
   # adjust scales to (hopefully) make the plot easier to interpret
   scale_x_log10(labels = scales::dollar_format(accuracy = 2)) +
@@ -180,11 +186,32 @@ p <- waste_mismanaged_gdp_plot %>%
   # remove unneccesary legends which might make the plot more confusing to look at
   guides(size = FALSE, fill = FALSE) +
   
+  coord_cartesian(ylim = c(0,1)) +
+  
   # add plot labels 
-  labs(x = "\nGDP per capita\n(on a log scale)",
-       y = "\nProportion of plastic waste mismanaged\n",
-       subtitle = "Larger, darker points represent countries which produce more plastic waste",
-       caption = "\nThe top 10 plastic waste producing countries are labeled")
+  labs(title = "Is an increase in GDP per capita associated with a reduction\nin the percentage of plastic waste a country mismanages?\n",
+       x = "\nGDP per capita\n(on a log scale)",
+       y = "\nPlastic waste mismanaged\n") +#,
+       #subtitle = "Larger, darker points represent countries which produce more plastic waste",
+       #caption = "\nThe top 10 plastic waste producing countries are labeled") +
+  
+  # annotate("text", x = 1300, y = 0.99, label = "Group 1", colour = "grey50") +
+  # annotate("text", x = 10000, y = 0.99, label = "Group 2", colour = "grey50") +
+  # annotate("text", x = 80000, y = 0.99, label = "Group 3", colour = "grey50") +
+  annotate("text", x = 1300, y = 0.05, 
+           label = "Economic development\nnot reducing\n mismanagement?", 
+           colour = "grey50", size = 3) +
+  annotate("text", x = 80000, y = 0.95, 
+           label = "Economic development\nnot reducing\n mismanagement?", 
+           colour = "grey50", size = 3) +
+  
+    annotate("text", x = 5700, y = 0.05, 
+           label = "Economic development\nreducing\n mismanagement?", 
+           colour = "grey50", size = 3) +
+  
+  theme(panel.grid = element_blank())
+
+p
 ```
 
 The plot itself shows GDP per capita on a log scale verses the proportion of plastic waste mismanaged. The overall relationship between the two variables is clearly non-linear.
