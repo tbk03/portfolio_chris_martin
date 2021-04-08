@@ -20,7 +20,7 @@ knit: (function(input_file, encoding) {
 # global settings for producing html output
 knitr::opts_chunk$set(warning = FALSE,  # remove for readability
                       message = FALSE)  # remove for readability 
-                      #cache = TRUE)
+                      # cache = TRUE)   # for inclusion during coding
 ```
 
 # Introduction
@@ -35,17 +35,17 @@ I started the modeling process with the idea that GDP per capita might be a help
 
 -   While on the other hand, that as economies develop they can use resources more efficient, so reducing the environmental impact of each unit of a resource that is consumed.
 
-Following on from this (1) Introduction section, in the three sections below I:
+This notebook has five sections:
 
-(2) Import and clean the two datasets needed to develop a model.
+1.  (This Introduction section) outlining the basic ideas that motivated the analysis;
 
-(3) Conduct an exploratory data analysis to understand the association between the proportion of plastic waste mismanaged by a country and it's GDP per capita.
+2.  Importing and cleaning the two datasets needed to develop a model.
 
-(4) Develop a 'piecewise' linear regression model to estimate he proportion of plastic waste mismanaged by a country based on it's GDP per capita.
+3.  Conducting an exploratory data analysis to understand the association between the proportion of plastic waste mismanaged by a country and it's GDP per capita.
 
-**Reflections:**
+4.  Developing a 'piecewise' linear regression model to estimate he proportion of plastic waste mismanaged by a country based on it's GDP per capita.
 
--   Would be interesting to compare the piecewise model fit in this notebook with a model using interactions between `gdp_per_capita` and a variable `gdp_per_capita_group` (which similarly to segmentation boundaries in the piecewise regression below catergories countries in to one of three groups).
+5.  Reflecting on the modeling process and identifying next steps.
 
 ## Dataset used
 
@@ -146,7 +146,7 @@ waste_mismanaged_gdp_plot <- waste_mismanaged_gdp %>%
            plastic_waste_tot) 
 ```
 
-Finally before creating the plot itself, I just needed to identify the top waste producing countries so these can be labeled within the plot.
+Finally before creating some exploratory visualisation, I just needed to identify the top waste producing countries so these can be labeled within the plot.
 
 ```{r}
 # identify top n waste producing country for labelling in plot
@@ -217,7 +217,7 @@ p <- waste_mismanaged_gdp_plot %>%
         plot.title = element_markdown())  # allow text formating
 ```
 
-The plot itself (below) shows GDP per capita on a log scale verses the proportion of plastic waste mismanaged. The overall relationship between the two variables is clearly non-linear.
+The first plot (below) shows GDP per capita on a log scale verses the proportion of plastic waste mismanaged. The overall relationship between the two variables is clearly non-linear.
 
 However, alternatively, I could view the plot as showing three different groups of countries each with a different linear relationships between the log of GDP per capita and the proportion of plastic waste mismanaged. The grey vertical lines in the plot below highlight where I estimated by eye the boundaries between these groups to fall. The groups themselves could be described as follows.
 
@@ -302,7 +302,7 @@ p1
 
 ## Fitting the model
 
-Based on the exploratory data analysis above, I decide to create an initial model using [piecewise linear regression](https://towardsdatascience.com/piecewise-linear-regression-model-what-is-it-and-when-can-we-use-it-93286cfee452). This simply involves partitioning the dataset into non-overlapping groups and fitting a linear regression model separately to each group. Based on the scatter plots above I also considered fitting a polynomial regression model. However, I went with piece-wise linear regression with hope that it would produce a model where the regression coefficients are easier to interpret (than in a polynomial model). Additionally, working with the piece-wise approach presented an interesting opportunity to apply some function programming techniques I have been learning recently (but I'll return to the practicalities of implementation in the code comments below).
+Based on the exploratory data analysis above, I decide to create an initial model using [piecewise linear regression](https://towardsdatascience.com/piecewise-linear-regression-model-what-is-it-and-when-can-we-use-it-93286cfee452). This simply involves partitioning the dataset into non-overlapping groups (based on values of predictor variable) and fitting a linear regression model separately to each group. Based on the scatter plots above I also considered fitting a polynomial regression model. However, I went with piece-wise linear regression with hope that it would produce a model where the regression coefficients are easier to interpret (than in a polynomial model). Additionally, working with the piece-wise approach presented an interesting opportunity to apply some function programming techniques I have been learning recently (but I'll return to the practicalities of implementation in the code comments below).
 
 The first stage in piecewise linear regression modeling is to partition data. In the exploratory data analysis I estimated by eye the boundaries for partitioning based on `gdp_per_cap`. In the modeling I want to apply a hopefully more rigorous approach to identifying the boundaries. So, in the code below I use a piecewise regression algorithm from the `segmented` package to estimate the boundaries (referred to as breakpoints in the algorithm output below). Note, that in the output below the breakpoints are on a log transformed scale.
 
@@ -380,7 +380,7 @@ segmented_models <- nested_segmented_data %>%
     data_grid = map2(.x = data_grid, .y = stan_glm,
                      .f = ~ add_predicted_draws(.x, .y)),
     
-    bayes_r2 = map(.x = stan_glm, ~ bayes_R2(.x))
+    bayes_r2 = map(.x = stan_glm, ~ as_tibble(bayes_R2(.x)))
   ) %>%
   
   # re-arrange to ensure plot facets and table of coefficients are in
@@ -454,8 +454,8 @@ p <- plotting_df %>%
   coord_cartesian(ylim = c(0,1)) +
   
   # add plot label
-  labs(x = "GDP per capita",
-       y = "Plastic waste mismanaged\n",
+  labs(x = "\nGDP per capita",
+       y = "\nPlastic waste mismanaged\n",
        fill = "Credibility interval",
        subtitle = "") +
   
@@ -490,19 +490,23 @@ if (interactive_plot) {
 }
 ```
 
-## Interpreting the model
+## Interpreting the model coefficients
 
--   For 'lower' income countries: a one percent increase in `gdp_per_cap` is (approximately) associated with a reduction of 0.04 percentage points in the percentage of plastic waste mismanaged.
-
--   For 'middle' income countries: a one percent increase in `gdp_per_cap` is (approximately) associated with a reduction of 0.38 percentage points in the percentage of plastic waste mismanaged.
-
--   For 'higher' income countries: a one percent increase in `gdp_per_cap` is (approximately) associated with a reduction of 0.05 percentage points in the percentage of plastic waste mismanaged
+Having fitted the model and used the posterior predictive distribution to show the uncertainty in the model's prediction, I wanted to look at the model coefficients in more detail. The first step was to extract and combine the coefficients for each of the three models that make up the overall piecewise regression.
 
 ```{r}
-segmented_models %>% 
-  select(-stan_glm, -lm_in, -data_grid) %>% 
+# get the coefficients for the three models
+summary_table_1 <- segmented_models %>% 
+  select(-stan_glm, -lm_in, -data_grid, -bayes_r2) %>% 
   unnest(coef)
+
+# format table
+summary_table_1 %>% 
+  kableExtra::kable() %>% 
+  kableExtra::kable_minimal()
 ```
+
+Based on the coefficients in the table above, the overall piecewise model can be expressed in mathematical notation as follows.
 
 $$ 
 y_{i} = \begin{cases}
@@ -512,14 +516,75 @@ y_{i} = \begin{cases}
 \end{cases}
 $$
 
+Where: $y_{i}$ is the estimated value of the proportion of plastic waste mismanaged for the *ith* point; and, $x_{i}$ is the value of gdp per capita for the *ith* point.
+
+Interpreting the coefficents of $x_{i}$ is relatively straight-forward:
+
+-   For 'lower' income countries ($x_{i} < 4500$): a one percent increase in `gdp_per_cap` is (approximately) associated with a reduction of 0.04 percentage points in the percentage of plastic waste mismanaged.
+
+-   For 'middle' income countries ($4500 \leq x_{i} < 27000$): a one percent increase in `gdp_per_cap` is (approximately) associated with a reduction of 0.38 percentage points in the percentage of plastic waste mismanaged.
+
+-   For 'higher' income countries ($x_{i} \geq 27000$): a one percent increase in `gdp_per_cap` is (approximately) associated with a reduction of 0.05 percentage points in the percentage of plastic waste mismanaged.
+
+However, directly interpreting the intercept terms is more challenging. First, this is because the intercept terms correspond to the expected proportion of plastic waste mismanaged for a country with zero GDP per capita. And, of course such a country does not and arguably could not exist. Secondly, the intercept terms for 'low' and 'middle' income countries do not lie within the range 0 to 1 (i.e. the possible values for a proportion). In general, these type of challenges with interpreting intercept terms can be addressed by subtracting an appropriate offset (often the mean or median) from the predictor values so the intercept term corresponds to the expected value of y for a sensible value of x. However, in this case due to the piecewise nature of the model offset would complicate interpretation further.
+
+## Some quick diagnostics
+
+Finally, ahead of considering what steps would be need to develop the model further, I wanted to do a more formal (but very quick) assessment of how well the model performs in estimating the proportion of plastic waste mismanaged for in sample data.
+
 ```{r}
-x <- 4500
-y_1 <- 3.99 - (0.38*log(x))
+# convenience function for mapping median to a specific dataframe
+calc_r2_median <- function(df){
+  return(median(df$value))
+}
 
-x <- 4500 * 1.01
-y_2 <- 3.99 - (0.38*log(x))
+# convenience function for mapping median to a specific dataframe
+calc_sd_obs <- function(df){
+  return(sd(df$prop_plastic_waste_misman, na.rm = TRUE))
+}
 
-y_2 - y_1
+summary_table_2 <- segmented_models %>% 
+  # focus on columns needed to produce summary statistics
+  select(income_group, lm_in, bayes_r2, stan_glm) %>% 
+  
+  # calculate summary stats for each group of countries / segment of the model
+  mutate(r2 = map_dbl(bayes_r2, ~ calc_r2_median(.x)),
+         plastic_misman_sd_obs = map_dbl(lm_in, ~ calc_sd_obs(.x)),
+         abs_residuals_mean = map_dbl(stan_glm, ~mean(abs(residuals(.x))))) %>%
+  
+  # focus on columns needed to convey the key information
+  select(-lm_in, -bayes_r2, -stan_glm) %>% 
+  
+  # add text description of country groups to aid interpretation of the table
+  add_column(income_group_desc = c("\'Lower\' income countries",
+                                   "\'Middle\' income countries",
+                                   "\'Higher\' income countries"),
+             .before = "r2")
+
+#mean(abs(residuals(segmented_models$stan_glm[[2]])))
+  
 ```
 
-## Some quick diagnostics 
+The table below shows the Bayesian R^2^ values (`bayes_r2` - the proportion of variance explained by the model) and the mean of the absolute values of the residuals for each group of countries. For context, the standard deviation of the proportion of plastic waste mismanaged in the observed data is shown in the `plastic_misman_sd_obs` column.
+
+Clearly overall the model is not performing particularly well.
+
+-   The R^2^ values for the 'lower' and 'higher' income groups of countries both being below 0.05. Basically, `gdp_per-cap` explains almost none of the variability in the outcome variable in these group. However, it should be noted there is not much variability of the proportion of plastic waste mismanaged in the observed data (as shown in the `plastic_misman_sd_obs` column), and the absolute values of the residuals tend to be relatively small.
+
+-   The R^2^ value for the 'middle' income group of countries is higher at approximately 0.46. This of course means that the proportion of variance unexplained by the model is 0.54. While the absolute values of the residuals tend to be relatively large. Both these factors highlight the need to further develop the model to improve it's ability to estimate the proportion of plastic waste a country mismanages.
+
+```{r}
+summary_table_2 %>% 
+  kableExtra::kable() %>% 
+  kableExtra::kable_minimal()
+```
+
+# Reflections and next steps
+
+In this notebook I developed a simple model developed above for estimating the proportion of plastic waste a country mismanages, based on it's GDP per capita. Comparing the observed values with the model's estimates of the proportion of plastic waste a country mismanages showed that for many countries the model estimates are disappointingly inaccurate. Nevertheless, the model developed in this notebook represents a first step towards developing a more complex and potential more accurate model. As and when I return to further develop the model my next steps would include:
+
+-   Exploring additional data sources to identify additional potential predictor variables (such as metrics might give an indication of the maturity of country's disposal system or it's waste disposal culture).
+
+-   Engineering the feature of model input data including iteratively integrating additional predictor variables and interactions into the model.
+
+-   Comparing the fit piecewise model in this notebook with a model using interactions between `gdp_per_capita` and a variable `gdp_per_capita_group` (which partitions countries in to one of three groups).
