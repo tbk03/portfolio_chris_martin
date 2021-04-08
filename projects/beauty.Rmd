@@ -1,0 +1,104 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r, include = FALSE}
+# global settings for producing html output
+knitr::opts_chunk$set(warning = FALSE,  # remove for readability
+                      message = FALSE,  # remove for readability 
+                      cache = TRUE)   # for inclusion during coding
+```
+
+# Introduction
+
+```{r}
+library(tidyverse)
+
+library(janitor)
+library(glue)
+
+```
+
+# Processing the data
+
+## Importing the data
+
+```{r}
+data_url <- "https://raw.githubusercontent.com/avehtari/ROS-Examples/master/Beauty/data/ProfEvaltnsBeautyPublic.csv"
+teaching_eval <- read_csv(data_url) %>% 
+  janitor::clean_names()
+
+teaching_eval
+```
+
+-   I reviewed the [data code book](https://github.com/avehtari/ROS-Examples/blob/master/Beauty/data/ProfEvaltnsBeautyPublic.log)
+
+```{r}
+# focus down on features in the dataset with a good potential to act as predictors
+teaching_eval_focus <- teaching_eval %>%
+  
+  select(
+    
+    # select and rename variables relating to the professor
+    tenured:age,
+    prof_ave_rating = profevaluation,
+    prof_ave_beauty_rating = btystdave,
+    female, formal, 
+    non_native_english = nonenglish,
+    tenure_track = tenuretrack,
+    
+    # select and rename variables relating to the course 
+    course_evaluation = courseevaluation,
+    lower,
+    multiple_prof = multipleclass,
+    one_credit = onecredit,
+    eval_response_rate = percentevaluating,
+    students,
+    class1:class30 # dummy variables
+    
+  ) %>% 
+
+  rename(prof_number = profnumber) 
+
+teaching_eval_focus  
+
+  
+```
+
+## Checking for missing values
+
+```{r}
+visdat::vis_miss(teaching_eval_focus %>% 
+                   select(-starts_with("class")))
+```
+
+```{r}
+visdat::vis_miss(teaching_eval_focus %>% 
+                   select(starts_with("class")))
+
+```
+
+```{r}
+# check if each evaluation has a class (1-30) associated with it
+# by processing the dummy variables
+dummy_var_row_sum <- teaching_eval_focus %>%
+  select(class1:class30) %>% 
+  rowSums() %>% 
+  as_tibble() %>% 
+  rename(class_indentified = value) # not all evaluations have a class                                              # associated with them
+
+visdat::vis_miss(dummy_var_row_sum %>% 
+                   na_if(0))
+```
+
+```{r}
+teaching_eval_clean <- teaching_eval_focus %>% 
+  select(-starts_with("class"))
+```
+
+# Exploratory data analysis
+
+# Modelling
+
+Remember to split into test and training sets
