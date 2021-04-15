@@ -237,7 +237,7 @@ skimr::skim(explanatory_variables_prof %>%
 
 To do this I wrote a quick function to identify binary variables within the dataset.
 
-```{r, skimr_include_summary = FALSE}
+```{r}
 #' Checks if a column is a binary variable 
 #' i.e. checks if a column only contains zeros and ones
 #'
@@ -265,13 +265,13 @@ There are only three continuous variables relating to Professors:
 
 -   the average rating given by students to each Professor teaching the course (`prof_ave_rating`);
 
--   the average beauty rating by students to each Professor teaching the course (`prof_ave_beauty_rating`;
+-   the average beauty rating by students to each Professor teaching the course (`prof_ave_beauty_rating)`;
 
 -   and, `age`.
 
 Immediately below are the summary statistics for each of the three variables. I then take a more detailed look at each one of these variables in turn.
 
-```{r}
+```{r, skimr_include_summary = FALSE}
 # identify continous variables within the dataset
 explanatory_variables_prof_cont <- explanatory_variables_prof %>% 
   select(where(~!is_binary_var(.))) 
@@ -281,54 +281,147 @@ skimr::skim(explanatory_variables_prof_cont %>%
               select(-prof_number))
 ```
 
-At first glance the distribution of `prof_ave_rating` is very similar to the distribution of the response variable (`course_evaluation)` . Although
+At first glance the distribution of `prof_ave_rating` is very similar to the distribution of the response variable (`course_evaluation)` .
 
 ```{r}
+plot_title <- "(Similarly to course evaluation scores)\nProfessor rating tends to be towards the upper end of the five point scale\n"
+
 ggplot(data = explanatory_variables_prof_cont,
        mapping = aes(x = prof_ave_rating)) +
   geom_minimal_hist(ylim = c(0,45), binwidth = 0.1) +
   expand_limits(x = 0)+
   
-  labs(x = "Professor rating",
+  labs(title = plot_title,
+       x = "Professor rating",
        y = "Number of ratings\n")
 ```
 
+The plot below compares `course_evaluation` and `prof_ave_rating` at each observation in the dataset. This shows that for a given course-professor pair the `prof_ave_rating` tends to be higher than the `course_evaluation` score.
+
 ```{r, fig.height= 7.5}
 teaching_eval_clean %>% 
+  
+  # focus on the two variables to be comparted for each observation
   select(course_evaluation, prof_ave_rating) %>% 
-  #sample_n(50) %>% 
   arrange(prof_ave_rating) %>% 
+  
+  # put the data in a long format for plotting
   mutate(id = 1:nrow(.), .before = course_evaluation) %>% 
   pivot_longer(cols = c(course_evaluation, prof_ave_rating),
                names_to = "score_type", values_to = "score") %>% 
   
+  # create plot base
   ggplot(mapping = aes(x = score, y = id)) +
-  geom_line(aes(group = id)) +
-  geom_point(aes(colour = score_type)) +
   
+  # add points for prof rating and course evaluation
+  # and connect each pair of points with a line
+  geom_line(aes(group = id), colour = "grey50") +
+  geom_point(aes(colour = score_type)) + 
+  
+  # show full x axis
   expand_limits(x = 0) +
   # remove gap between x axis and plot
-    coord_cartesian(ylim = c(0, nrow(teaching_eval_clean)+5),
-                    xlim = c(0, 5.1),
-                    expand = FALSE) +
+  coord_cartesian(ylim = c(0, nrow(teaching_eval_clean)+5),
+                  xlim = c(0, 5.1),
+                  expand = FALSE) +
   
+  # add plot labels
+  labs(title = "But Professor ratings tend to be higher than course evaluation scores",
+       subtitle = "Both are on the same five point scale\n") + 
+  
+  # format legend to remove clutter
+  scale_color_brewer(palette = "Set1",
+                     labels = c("Course evaluation score",
+                                  "Professor rating")) +
+  guides(colour = guide_legend(title = NULL)) +
+  
+  # adjust theme to remove clutter
   remove_all_grid_lines() +
   theme(axis.title.y  = element_blank(),
         axis.text.y = element_blank(),
-        axis.line.y = element_blank())
+        axis.line.y = element_blank(),
+        legend.position = "top",
+        legend.text = element_text(size = 10))
 ```
 
-Professors can appear multiple times in the dataset, where they have been involved in teaching multiple courses. The `prof_ave_rating` is the average rating given by students to the professor for an individual course. So, averaging ratings for a given professor over multiple courses might give an idea of the quality of teaching delivered in general by a given professor. I'll call this mean of average ratings over multiple course `average_teaching_qual` just to avoid confusing terminology created with the multiple levels of averaging taking place.
+Professors can appear multiple times in the dataset, where they have been involved in teaching multiple courses. The `prof_ave_rating` is the average of the ratings given by students to the professor for an individual course. The plot below shows the `prof_ave_rating`s for 10 randomly selected professors. So, highlighting that as expected there is some variability in the average ratings that professors received from course to course.
 
 ```{r}
-nrow(explanatory_variables_prof_cont)
-
-length(unique(explanatory_variables_prof_cont$prof_number))
+# ensure the sample random sample of professors is take when notebook is rerun
+set.seed(100)
 
 explanatory_variables_prof_cont %>% 
-  group_by(prof_number) %>% 
-  summarise(prof_ave_rating_sd = sd(prof_ave_rating))
+  
+  # select a random sample of professors
+  group_by(prof_number) %>%
+  nest() %>% 
+  ungroup() %>% 
+  slice_sample(n = 10) %>% 
+  mutate(prof_number = factor(prof_number)) %>% # convert to factor 
+                                                # to simplify plotting
+  unnest() %>% 
+  
+  # produce plot
+  ggplot(aes(prof_ave_rating, prof_number)) +
+  
+  # jitter slightly to make overlapping points easier to see
+  geom_jitter(alpha = 0.5, height = 0.1) +
 
+  # adjust axis for readibility
+  expand_limits(x = 0)+
+  coord_flip() +
+  
+  # add plot labels
+  labs(y = "Professor identification number",
+       x = "Course evaluation score",
+       title = "There is some variablility in the evaluation scores professors\n received from course to course",
+       subtitle = "Showing course evaulation scores for 10 randomly selected professors")
+```
+
+So, averaging ratings for a given professor over multiple courses might give an idea of the quality of teaching delivered in general by a given professor. I'll call this mean of average ratings over multiple course `ave_teaching_qual` just to avoid confusing terminology created with the multiple levels of averaging taking place. I'll return to this estimate of teaching quality delivered by each professor later on, as it may be a potentially useful predictor of a `course_evaluation` score.
+
+```{r}
+prof_ave_teach_qual <- explanatory_variables_prof_cont %>% 
+  group_by(prof_number) %>%
+  summarise(ave_teaching_qual = mean(prof_ave_rating))
+
+explanatory_variables_prof_cont <- explanatory_variables_prof_cont %>% 
+  left_join(prof_ave_teach_qual)
+```
+
+Moving on to the next professor related continuous variable the `prof_ave_beauty_rating`. There is a single beauty rating for each professor. I confirmed this in the code below by confirming the standard deviation of each Professor's `prof_ave_beauty_rating` is zero.
+
+```{r}
+# check if the beauty of professors has been rated seperately for each course
+explanatory_variables_prof_cont %>% 
+  
+  group_by(prof_number) %>% 
+  summarise(beauty_rating_sd = sd(prof_ave_beauty_rating)) %>% 
+  
+  # I am not sure why NAs are being produced here
+  # I checked the dataframe manually and they look like they relate to empty rows 
+  # at the end of the dataframe. After a quick Google I could find an obvious
+  # reason for these empty rows, so I decided to leave this issues for now.
+  distinct(beauty_rating_sd)
+
+```
+
+Looking at the `prof_ave_beauty_rating`s in the plot below, it looks like again the rating were on five point scale and have already been centered. I am going to assume zero corresponds to average beauty on a Likhert scale (very unattractive, unattractive, average attractiveness, attractive, very attractive). Then it looks like there may be some tendency for students to rate their Professors as being unattractive or around average. Remembering that the ratings plotted below are averages and assuming that students were not asked to rate attractiveness on a more granular scale, where ratings of for example -0.1 could be given. A Likhert scale seems much more likely.
+
+```{r}
+ggplot(explanatory_variables_prof_cont,
+       aes(prof_ave_beauty_rating)) +
+  geom_minimal_hist(ylim = c(0,70), binwidth = 0.2) +
+  
+  labs(title = "Do students tend to rate Professor as average\nor below average attactiveness?",
+       x = "Average beauty rating",
+       y = "Number of professors\n")
+```
+
+```{r}
+ggplot(explanatory_variables_prof_cont,
+       aes(age)) +
+  geom_minimal_hist(ylim = c(0,110), binwidth = 5)
 ```
 
 #### Binary variables
